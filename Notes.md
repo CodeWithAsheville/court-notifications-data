@@ -12,6 +12,13 @@ Created a court-agent role (for now with admin access) and attached it to the EC
 # To Do
 - Add a makefile to src/load-data to descend into the subdirectories
 - Add a readme in the src directory or top level on building
+- Work through the logic for processing new files from S3:
+    - Create a trigger for the lambda function from the courtdates.org S3 bucket (datafiles/*)
+    - Probably should keep a record of loads (file name, date, length)
+    - load to a side table
+    - work out the logic for swapping in the new data
+- Work through the logic for the SFTP download - need to know what file name to look for.
+- Figure out how we're going to monitor all this!
 - Upgrade the main court reminders database (per [this email](https://mail.google.com/mail/u/0/#inbox/WhctKKZWnmmLCVGRxvpfWCPwWNdKKdrdccMCfgHlNkTPmJbDRlQtXpSCRBPcJwXgPpJrkRg) and following [these instructions](https://devcenter.heroku.com/articles/upgrading-heroku-postgres-databases)). Do on the staging server first, obviously. Requires about 30 min downtime.
 
 
