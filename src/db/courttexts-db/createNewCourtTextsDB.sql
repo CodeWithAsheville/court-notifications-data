@@ -36,7 +36,7 @@ CREATE TABLE ct.criminal_dates (
 	defendant_name text NOT NULL,
 	defendant_race text NULL,
 	defendant_sex text NULL,
-	offence_code text NULL,
+	offense_code text NULL,
 	offense_description text NULL,
 	officer_witness_type text NULL,
 	officer_agency text NULL,

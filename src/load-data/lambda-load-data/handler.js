@@ -1,9 +1,35 @@
 const pg = require('pg');
 
 const { GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
+const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
 
 const s3Client = new S3Client({});
+const region = 'us-east-1';
+let secret;
 
+async function getConnection(secretName) {
+    const client = new SecretsManagerClient({
+      region
+    });
+  
+    let response;
+    try {
+      response = await client.send(
+        new GetSecretValueCommand({
+          SecretId: secretName,
+          VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
+        })
+      );
+      console.log('Result from secret get is console.log(response.SecretString)')
+    } catch (error) {
+      console.log(error);
+      // For a list of exceptions thrown, see
+      // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+      throw error;
+    }
+    console.log(response.SecretString)
+    return JSON.parse(response.SecretString);
+}
 
 function parseLine(line) {
     const date = `${line.substring(33,37)}-${line.substring(37,39)}-${line.substring(39,41)}`;
@@ -33,7 +59,7 @@ const query = `
     INSERT INTO ct.criminal_dates (case_number, case_type, citation_number, calendar_date, calendar_session, 
     defendant_name, defendant_race, defendant_sex, offense_code, offense_description, officer_witness_type, 
     officer_agency, officer_number, officer_name, officer_city, court_type, ethnicity)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     ON CONFLICT (case_number)
     DO UPDATE SET
     case_type = EXCLUDED.case_type,
@@ -55,7 +81,10 @@ const query = `
 `;
 
 exports.lambda_handler = async function x(event, context) {
-    let message = 'Nothing worked';
+    let message = 'Data loaded successfully';
+    let statusCode = 200;
+    let lines = [];
+    let pgClient = null;
     const command = new GetObjectCommand({
       Bucket: "courtdates.org",
       Key: "datafiles/BuncombeCriminal-20240605_095936.txt",
@@ -63,24 +92,50 @@ exports.lambda_handler = async function x(event, context) {
   
     try {
         const response = await s3Client.send(command);
+        const str = await response.Body.transformToString('UTF-16LE');
+        lines = str.split('\n');
+    } catch (err) {
+        message = 'Error getting court dates file from S3: ' + err;
+        statusCode = 500;
+        console.error(message);
+        return {
+            statusCode: statusCode,
+            body: message,
+        }    
+    }
 
+    try {
+        const connection = await getConnection('court-texts-database');
+        console.log('Connection is ', connection);
+        const config = {
+            host: connection.host,
+            port: connection.port,
+            user: connection.username,
+            password: connection.password,
+            database: connection.database,
+            max: 10,
+            idleTimeoutMillis: 10000,
+          };
+        console.log('Config is ', config);
+        console.log('Now create the client');
+        pgClient = new pg.Client(config);
+    } catch (err) {
+        message = 'Error connecting to the database: ' + err;
+        statusCode = 500;
+        console.error(message);
+        return {
+            statusCode: statusCode,
+            body: message,
+        }    
+    }
+
+    try {
         // PostgreSQL client setup
-        const pgClient = new pg.Client(DATABASE_URL);
         pgClient.connect();
 
-        const str = await response.Body.transformToString('UTF-16LE');
-        const lines = str.split('\n');
-
-        console.log(lines.length);
-        let n = lines.length;
-        message = 'Length of the string is ' + n;
-        
-        for (let i = 1; i < n; i += 1) {
-            const val = parseLine(lines[i]);
-
-            if (i < 10) {
-                console.log(lines[i]);
-                console.log(val);
+        for (let i = 1; i < lines.length; i += 1) {
+            const record = parseLine(lines[i]);
+            if (record.case_number.length > 0) {
                 const values = [
                     record.case_number,
                     record.case_type,
@@ -105,13 +160,15 @@ exports.lambda_handler = async function x(event, context) {
         }
         pgClient.end();
     } catch (err) {
-      console.error(err);
+        message = 'Error loading to the database: ' + err;
+        statusCode = 500;
+        console.error(message);
     }
     finally {
+        pgClient.end();
     }
     return {
-        statusCode: 200,
+        statusCode: statusCode,
         body: message,
-    }
-
+    }    
   };
