@@ -1,7 +1,6 @@
 # To Do
 - Add a readme in the src directory or top level on building
 - Work through the logic for processing new files from S3:
-    - Create a trigger for the lambda function from the courtdates.org S3 bucket (datafiles/*)
     - Probably should keep a record of loads (file name, date, length)
     - load to a side table
     - work out the logic for swapping in the new data

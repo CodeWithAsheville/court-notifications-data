@@ -14,6 +14,29 @@ resource "aws_lambda_function" "load_data_fn-$$INSTANCE$$" {
     memory_size     = 256
 }
 
+data "aws_s3_bucket" "courttexts" {
+  bucket = "courttexts"
+}
+
+resource "aws_lambda_permission" "allow_bucket" {
+  statement_id  = "AllowExecutionFromS3Bucket"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.load_data_fn-$$INSTANCE$$.arn
+  principal     = "s3.amazonaws.com"
+  source_arn    = data.aws_s3_bucket.courttexts.arn
+}
+
+resource "aws_s3_bucket_notification" "bucket_notification" {
+  bucket = data.aws_s3_bucket.courttexts.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.load_data_fn-$$INSTANCE$$.arn
+    events              = ["s3:ObjectCreated:*"]
+  }
+
+  depends_on = [aws_lambda_permission.allow_bucket]
+}
+
 output "load_data_fn_arn" {
   value = "${aws_lambda_function.load_data_fn-$$INSTANCE$$.arn}"
 }

@@ -85,9 +85,11 @@ exports.lambda_handler = async function x(event, context) {
     let statusCode = 200;
     let lines = [];
     let pgClient = null;
+    console.log('Bucket name: ', event.Records[0].s3.bucket.name);
+    console.log('Object key:  ', event.Records[0].s3.object.key);
     const command = new GetObjectCommand({
-      Bucket: "courtdates.org",
-      Key: "datafiles/BuncombeCriminal-20240605_095936.txt",
+      Bucket: event.Records[0].s3.bucket.name,
+      Key: event.Records[0].s3.object.key,
     });
   
     try {
