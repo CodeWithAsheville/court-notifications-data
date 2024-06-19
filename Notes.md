@@ -1,12 +1,13 @@
 # To Do
+- Add test in loader to verify filename has right format and hasn't been loaded before
+- Load to a staging table
+- As a transaction:
+  - Truncate main table
+  - Copy data from staging to main table
+  - Record date/time and filename
+- Work out logic for the SFTP download - how do we generate name for Bedrock to download?
 - Add a readme in the src directory or top level on building
-- Work through the logic for processing new files from S3:
-    - Probably should keep a record of loads (file name, date, length)
-    - load to a side table
-    - work out the logic for swapping in the new data
-- Work through the logic for the SFTP download - need to know what file name to look for.
 - Figure out how we're going to monitor all this!
-- Upgrade the main court reminders database (per [this email](https://mail.google.com/mail/u/0/#inbox/WhctKKZWnmmLCVGRxvpfWCPwWNdKKdrdccMCfgHlNkTPmJbDRlQtXpSCRBPcJwXgPpJrkRg) and following [these instructions](https://devcenter.heroku.com/articles/upgrading-heroku-postgres-databases)). Do on the staging server first, obviously. Requires about 30 min downtime.
 
 
 # Creating the EC2 instance for running the sftp download from Buncombe County

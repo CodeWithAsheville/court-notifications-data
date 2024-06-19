@@ -85,11 +85,29 @@ exports.lambda_handler = async function x(event, context) {
     let statusCode = 200;
     let lines = [];
     let pgClient = null;
-    console.log('Bucket name: ', event.Records[0].s3.bucket.name);
-    console.log('Object key:  ', event.Records[0].s3.object.key);
+    let bucket;
+    let key;
+    if ('Records' in event) {
+        // If triggered by creation of an object in S3
+        bucket = event.Records[0].s3.bucket.name;
+        key = event.Records[0].s3.object.key;
+    } else if ('bucket' in event && 'key' in event) {
+        // If triggered manually with a simple { "bucket": "<name>", "key": "key" event}
+        bucket = event.bucket;
+        key = event.key;
+    }
+    else {
+        return {
+            statusCode: 500,
+            body: 'Unknown input: ' + JSON.stringify(event),
+        }   
+    }
+    console.log('Bucket name: ', bucket);
+    console.log('Object key:  ', key);
+
     const command = new GetObjectCommand({
-      Bucket: event.Records[0].s3.bucket.name,
-      Key: event.Records[0].s3.object.key,
+      Bucket: bucket,
+      Key: key,
     });
   
     try {
