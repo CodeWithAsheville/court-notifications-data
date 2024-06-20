@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS ct.file_imports;
 DROP TABLE IF EXISTS ct.criminal_dates;
 DROP TYPE IF EXISTS ct.calendar_sessions;
 DROP TYPE IF EXISTS ct.case_types;
@@ -46,7 +47,15 @@ CREATE TABLE ct.criminal_dates (
 	court_type text NULL,
 	ethnicity text NULL
 );
+
+CREATE TABLE ct.file_imports (
+	import_date timestamp without time zone NOT NULL,
+	filename text NULL,
+	comment text NULL
+);
+
 -- Permissions
 ALTER TABLE ct.criminal_dates OWNER TO ct_user;
+ALTER TABLE ct.file_imports OWNER TO ct_user;
 GRANT ALL ON TABLE ct.criminal_dates TO ct_user;
-
+GRANT ALL ON TABLE ct.file_imports TO ct_user;
