@@ -4,6 +4,10 @@ statebucket = "courtdates.org"
 account = account = 533267317049
 build_mode = std # Set to sam to build using SAM
 
+
+# Maximum percentage change in court dates file length between uploads
+MAX_PERCENT_CHANGE = 0.2
+
 # The next four variables provide information on the VPC, subnets and security
 # groups that Bedrock will use. They can be created in the network folder and
 # the resulting output copied here, or you can use existing resources.

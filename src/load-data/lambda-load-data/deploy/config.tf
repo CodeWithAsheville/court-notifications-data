@@ -12,6 +12,11 @@ resource "aws_lambda_function" "load_data_fn-$$INSTANCE$$" {
     source_code_hash = filebase64sha256("../function.zip")
     timeout         = 900
     memory_size     = 256
+    environment {
+        variables = {
+            MAX_PERCENT_CHANGE = $$MAX_PERCENT_CHANGE$$
+        }
+    }
 }
 
 data "aws_s3_bucket" "courttexts" {

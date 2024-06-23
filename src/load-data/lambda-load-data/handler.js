@@ -55,6 +55,18 @@ function parseLine(line) {
     };
 }
 
+async function getPercentageChange(client) {
+    let pctChange = 1.;
+    let res = await client.query('select count(*) from ct.criminal_dates_staging');
+    const newLength = res.rows[0].count;
+    res = await client.query('select count(*) from ct.criminal_dates');
+    const oldLength = res.rows[0].count;
+    if (oldLength > 0) {
+        pctChange = Math.abs((newLength - oldLength)/oldLength);
+    }
+    console.log('Old, New lengths, Percent Change: ', oldLength, newLength, pctChange);
+    return pctChange;
+}
 
 exports.lambda_handler = async function x(event, context) {
     let message = 'Data loaded successfully';
@@ -155,10 +167,8 @@ exports.lambda_handler = async function x(event, context) {
         `;
 
         // Load the data into a staging table
-        console.log('Length of dataset: ', lines.length);
         await pgClient.query('TRUNCATE ct.criminal_dates_staging;');
 
-        console.log(query);
         for (let i = 1; i < lines.length; i += 1) {
             const record = parseLine(lines[i]);
             if (record.case_number.length > 0) {
@@ -181,11 +191,14 @@ exports.lambda_handler = async function x(event, context) {
                     record.court_type,
                     record.ethnicity,
                 ];
-                console.log(query);
-                console.log(i, values);
                 await pgClient.query(query, values);
             }
         }
+        const pctChange = await getPercentageChange(pgClient);
+        if (pctChange > process.env.MAX_PERCENT_CHANGE) {
+            console.log('Percentage change exceeds limit', pctChange);
+        }
+
         // Now copy the data into the production table
         console.log('Start the transaction');
         await pgClient.query('BEGIN');
