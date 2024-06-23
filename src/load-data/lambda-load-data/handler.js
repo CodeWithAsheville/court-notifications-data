@@ -43,7 +43,7 @@ function parseLine(line) {
         defendant_name: line.substring(56,84).trim(),
         defendant_race: line.substring(98,99).trim(),
         defendant_sex: line.substring(102,103).trim(),
-        offence_code: line.substring(106,110).trim(),
+        offense_code: line.substring(106,110).trim(),
         offense_description: line.substring(113,141).trim(),
         officer_witness_type: line.substring(144,145).trim(),
         officer_agency: line.substring(148,178).trim(),
@@ -55,30 +55,6 @@ function parseLine(line) {
     };
 }
 
-const query = `
-    INSERT INTO ct.criminal_dates (case_number, case_type, citation_number, calendar_date, calendar_session, 
-    defendant_name, defendant_race, defendant_sex, offense_code, offense_description, officer_witness_type, 
-    officer_agency, officer_number, officer_name, officer_city, court_type, ethnicity)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-    ON CONFLICT (case_number)
-    DO UPDATE SET
-    case_type = EXCLUDED.case_type,
-    citation_number = EXCLUDED.citation_number,
-    calendar_date = EXCLUDED.calendar_date, 
-    calendar_session = EXCLUDED.calendar_session, 
-    defendant_name = EXCLUDED.defendant_name, 
-    defendant_race = EXCLUDED.defendant_race, 
-    defendant_sex = EXCLUDED.defendant_sex, 
-    offense_code = EXCLUDED.offense_code, 
-    offense_description = EXCLUDED.offense_description, 
-    officer_witness_type = EXCLUDED.officer_witness_type, 
-    officer_agency = EXCLUDED.officer_agency, 
-    officer_number = EXCLUDED.officer_number, 
-    officer_name = EXCLUDED.officer_name, 
-    officer_city = EXCLUDED.officer_city, 
-    court_type = EXCLUDED.court_type, 
-    ethnicity = EXCLUDED.ethnicity
-`;
 
 exports.lambda_handler = async function x(event, context) {
     let message = 'Data loaded successfully';
@@ -114,6 +90,7 @@ exports.lambda_handler = async function x(event, context) {
         const response = await s3Client.send(command);
         const str = await response.Body.transformToString('UTF-16LE');
         lines = str.split('\n');
+        console.log('Line 3: ', lines[2]);
     } catch (err) {
         message = 'Error getting court dates file from S3: ' + err;
         statusCode = 500;
@@ -124,6 +101,7 @@ exports.lambda_handler = async function x(event, context) {
         }    
     }
 
+    // PostgreSQL client setup
     try {
         const connection = await getConnection('court-texts-database');
         console.log('Connection is ', connection);
@@ -139,6 +117,7 @@ exports.lambda_handler = async function x(event, context) {
         console.log('Config is ', config);
         console.log('Now create the client');
         pgClient = new pg.Client(config);
+        pgClient.connect();
     } catch (err) {
         message = 'Error connecting to the database: ' + err;
         statusCode = 500;
@@ -150,9 +129,36 @@ exports.lambda_handler = async function x(event, context) {
     }
 
     try {
-        // PostgreSQL client setup
-        pgClient.connect();
+        let query = `
+            INSERT INTO ct.criminal_dates_staging (case_number, case_type, citation_number, calendar_date, calendar_session, 
+            defendant_name, defendant_race, defendant_sex, offense_code, offense_description, officer_witness_type, 
+            officer_agency, officer_number, officer_name, officer_city, court_type, ethnicity)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            ON CONFLICT (case_number)
+            DO UPDATE SET
+            case_type = EXCLUDED.case_type,
+            citation_number = EXCLUDED.citation_number,
+            calendar_date = EXCLUDED.calendar_date, 
+            calendar_session = EXCLUDED.calendar_session, 
+            defendant_name = EXCLUDED.defendant_name, 
+            defendant_race = EXCLUDED.defendant_race, 
+            defendant_sex = EXCLUDED.defendant_sex, 
+            offense_code = EXCLUDED.offense_code, 
+            offense_description = EXCLUDED.offense_description, 
+            officer_witness_type = EXCLUDED.officer_witness_type, 
+            officer_agency = EXCLUDED.officer_agency, 
+            officer_number = EXCLUDED.officer_number, 
+            officer_name = EXCLUDED.officer_name, 
+            officer_city = EXCLUDED.officer_city, 
+            court_type = EXCLUDED.court_type, 
+            ethnicity = EXCLUDED.ethnicity;
+        `;
 
+        // Load the data into a staging table
+        console.log('Length of dataset: ', lines.length);
+        await pgClient.query('TRUNCATE ct.criminal_dates_staging;');
+
+        console.log(query);
         for (let i = 1; i < lines.length; i += 1) {
             const record = parseLine(lines[i]);
             if (record.case_number.length > 0) {
@@ -175,10 +181,35 @@ exports.lambda_handler = async function x(event, context) {
                     record.court_type,
                     record.ethnicity,
                 ];
+                console.log(query);
+                console.log(i, values);
                 await pgClient.query(query, values);
             }
         }
+        // Now copy the data into the production table
+        console.log('Start the transaction');
+        await pgClient.query('BEGIN');
+
+        query = `INSERT INTO ct.file_imports (filename, comment) VALUES ('${key}', '')`;
+        console.log('File log: ', query);
+        await pgClient.query(query);
+
+        query = `
+            TRUNCATE TABLE ct.criminal_dates;
+            INSERT INTO ct.criminal_dates
+            SELECT case_number, case_type, citation_number, calendar_date, calendar_session,
+                defendant_name, defendant_race, defendant_sex, offense_code, offense_description,
+                officer_witness_type, officer_agency, officer_number, officer_name, officer_city, 
+                court_type, ethnicity
+            FROM ct.criminal_dates_staging;
+        `;
+        console.log('Now copy the staging table over');
+        await pgClient.query(query);
+        console.log('Now commit');
+        await pgClient.query('COMMIT');
+
         pgClient.end();
+        console.log('Now done');
     } catch (err) {
         message = 'Error loading to the database: ' + err;
         statusCode = 500;
