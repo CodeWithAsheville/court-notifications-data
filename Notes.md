@@ -1,7 +1,8 @@
 # To Do
-- Add row to file_imports table on load.
 - Add test in loader to verify filename has right format and hasn't been loaded before
-- How are we going to do error checking (length of file, names, etc.)
+- Finish checking pct length change.
+- Add check of file glob
+- How are we going to do error notificaiton?
 - Work out logic for the SFTP download - how do we generate name for Bedrock to download?
 - Add a readme in the src directory or top level on building
 - Figure out how we're going to monitor all this!
