@@ -70,6 +70,7 @@ async function getPercentageChange(client) {
 
 exports.lambda_handler = async function x(event, context) {
     let message = 'Data loaded successfully';
+    let fileComment = '';
     let statusCode = 200;
     let lines = [];
     let pgClient = null;
@@ -92,25 +93,31 @@ exports.lambda_handler = async function x(event, context) {
     }
     console.log('Bucket name: ', bucket);
     console.log('Object key:  ', key);
+    const regex1 = new RegExp(process.env.FILE_REGEXP);
+    let validFile = regex1.test(key);
+    if (!validFile) fileComment = 'Not a valid file - not loaded';
+    console.log('   validFile = ', validFile);
 
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-    });
-  
-    try {
-        const response = await s3Client.send(command);
-        const str = await response.Body.transformToString('UTF-16LE');
-        lines = str.split('\n');
-        console.log('Line 3: ', lines[2]);
-    } catch (err) {
-        message = 'Error getting court dates file from S3: ' + err;
-        statusCode = 500;
-        console.error(message);
-        return {
-            statusCode: statusCode,
-            body: message,
-        }    
+    if (validFile) {
+        const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        });
+    
+        try {
+            const response = await s3Client.send(command);
+            const str = await response.Body.transformToString('UTF-16LE');
+            lines = str.split('\n');
+            console.log('Line 3: ', lines[2]);
+        } catch (err) {
+            message = 'Error getting court dates file from S3: ' + err;
+            statusCode = 500;
+            console.error(message);
+            return {
+                statusCode: statusCode,
+                body: message,
+            }    
+        }
     }
 
     // PostgreSQL client setup
@@ -165,59 +172,64 @@ exports.lambda_handler = async function x(event, context) {
             court_type = EXCLUDED.court_type, 
             ethnicity = EXCLUDED.ethnicity;
         `;
+        if (validFile) {
+            // Load the data into a staging table
+            await pgClient.query('TRUNCATE ct.criminal_dates_staging;');
 
-        // Load the data into a staging table
-        await pgClient.query('TRUNCATE ct.criminal_dates_staging;');
-
-        for (let i = 1; i < lines.length; i += 1) {
-            const record = parseLine(lines[i]);
-            if (record.case_number.length > 0) {
-                const values = [
-                    record.case_number,
-                    record.case_type,
-                    record.citation_number,
-                    record.calendar_date,
-                    record.calendar_session,
-                    record.defendant_name,
-                    record.defendant_race,
-                    record.defendant_sex,
-                    record.offense_code,
-                    record.offense_description,
-                    record.officer_witness_type,
-                    record.officer_agency,
-                    record.officer_number,
-                    record.officer_name,
-                    record.officer_city,
-                    record.court_type,
-                    record.ethnicity,
-                ];
-                await pgClient.query(query, values);
+            for (let i = 1; i < lines.length; i += 1) {
+                const record = parseLine(lines[i]);
+                if (record.case_number.length > 0) {
+                    const values = [
+                        record.case_number,
+                        record.case_type,
+                        record.citation_number,
+                        record.calendar_date,
+                        record.calendar_session,
+                        record.defendant_name,
+                        record.defendant_race,
+                        record.defendant_sex,
+                        record.offense_code,
+                        record.offense_description,
+                        record.officer_witness_type,
+                        record.officer_agency,
+                        record.officer_number,
+                        record.officer_name,
+                        record.officer_city,
+                        record.court_type,
+                        record.ethnicity,
+                    ];
+                    await pgClient.query(query, values);
+                }
             }
-        }
-        const pctChange = await getPercentageChange(pgClient);
-        if (pctChange > process.env.MAX_PERCENT_CHANGE) {
-            console.log('Percentage change exceeds limit', pctChange);
+            const pctChange = await getPercentageChange(pgClient);
+            if (pctChange > process.env.MAX_PERCENT_CHANGE) {
+                console.log('Percentage change exceeds limit', pctChange);
+                validFile = false;
+                fileComment = 'Percentage change exceeds limit - file not loaded';
+            }
         }
 
         // Now copy the data into the production table
         console.log('Start the transaction');
         await pgClient.query('BEGIN');
 
-        query = `INSERT INTO ct.file_imports (filename, comment) VALUES ('${key}', '')`;
+        query = `INSERT INTO ct.file_imports (filename, comment) VALUES ('${key}', '${fileComment}')`;
         console.log('File log: ', query);
         await pgClient.query(query);
 
-        query = `
-            TRUNCATE TABLE ct.criminal_dates;
-            INSERT INTO ct.criminal_dates
-            SELECT case_number, case_type, citation_number, calendar_date, calendar_session,
-                defendant_name, defendant_race, defendant_sex, offense_code, offense_description,
-                officer_witness_type, officer_agency, officer_number, officer_name, officer_city, 
-                court_type, ethnicity
-            FROM ct.criminal_dates_staging;
-        `;
-        console.log('Now copy the staging table over');
-        await pgClient.query(query);
+        if (validFile) {
+            query = `
+                TRUNCATE TABLE ct.criminal_dates;
+                INSERT INTO ct.criminal_dates
+                SELECT case_number, case_type, citation_number, calendar_date, calendar_session,
+                    defendant_name, defendant_race, defendant_sex, offense_code, offense_description,
+                    officer_witness_type, officer_agency, officer_number, officer_name, officer_city, 
+                    court_type, ethnicity
+                FROM ct.criminal_dates_staging;
+            `;
+            console.log('Now copy the staging table over');
+            await pgClient.query(query);
+        }
         console.log('Now commit');
         await pgClient.query('COMMIT');
 
@@ -230,6 +242,10 @@ exports.lambda_handler = async function x(event, context) {
     }
     finally {
         pgClient.end();
+    }
+    if (!validFile) {
+        statusCode = 200;
+        message = fileComment;
     }
     return {
         statusCode: statusCode,

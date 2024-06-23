@@ -15,6 +15,7 @@ resource "aws_lambda_function" "load_data_fn-$$INSTANCE$$" {
     environment {
         variables = {
             MAX_PERCENT_CHANGE = $$MAX_PERCENT_CHANGE$$
+            FILE_REGEXP = $$FILE_REGEXP$$
         }
     }
 }
