@@ -2,6 +2,7 @@ const pg = require('pg');
 
 const { GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
+const sendEmail = require('./send-email');
 
 const s3Client = new S3Client({});
 const region = 'us-east-1';
@@ -84,8 +85,7 @@ exports.lambda_handler = async function x(event, context) {
         // If triggered manually with a simple { "bucket": "<name>", "key": "key" event}
         bucket = event.bucket;
         key = event.key;
-    }
-    else {
+    } else {
         return {
             statusCode: 500,
             body: 'Unknown input: ' + JSON.stringify(event),
@@ -113,6 +113,7 @@ exports.lambda_handler = async function x(event, context) {
             message = 'Error getting court dates file from S3: ' + err;
             statusCode = 500;
             console.error(message);
+            await sendEmail(statusCode, message)
             return {
                 statusCode: statusCode,
                 body: message,
@@ -141,6 +142,7 @@ exports.lambda_handler = async function x(event, context) {
         message = 'Error connecting to the database: ' + err;
         statusCode = 500;
         console.error(message);
+        await sendEmail(statusCode, message)
         return {
             statusCode: statusCode,
             body: message,
@@ -239,14 +241,17 @@ exports.lambda_handler = async function x(event, context) {
         message = 'Error loading to the database: ' + err;
         statusCode = 500;
         console.error(message);
-    }
-    finally {
+    } finally {
         pgClient.end();
     }
+
     if (!validFile) {
         statusCode = 200;
         message = fileComment;
     }
+
+    await sendEmail(statusCode, message)
+
     return {
         statusCode: statusCode,
         body: message,
